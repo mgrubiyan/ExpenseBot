@@ -1,8 +1,9 @@
 module ExpenseBot
 
-go 1.25
+go 1.22
 
 require (
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/joho/godotenv v1.5.1
+	modernc.org/sqlite v1.29.9
 )

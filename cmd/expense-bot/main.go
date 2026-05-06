@@ -23,23 +23,123 @@ func parseExpenseInput(text string) (string, int64, error) {
 
 	tag := parts[0]
 
-	amountRub, err := strconv.Atoi(parts[1])
+	amountFloat, err := strconv.ParseFloat(parts[1], 64)
 	if err != nil {
 		return "", 0, fmt.Errorf("amount must be a number")
 	}
-
-	if amountRub <= 0 {
+	if amountFloat <= 0 {
 		return "", 0, fmt.Errorf("amount must be greater than zero")
 	}
 
-	amountKopecks := int64(amountRub * 100)
+	// Store as kopecks to avoid floating point issues
+	amountKopecks := int64(amountFloat * 100)
 
 	return tag, amountKopecks, nil
 }
 
+func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, st storage.Storage) {
+	if update.Message == nil {
+		return
+	}
+
+	chatID := update.Message.Chat.ID
+	userID := update.Message.From.ID
+	text := strings.TrimSpace(update.Message.Text)
+
+	send := func(reply string) {
+		msg := tgbotapi.NewMessage(chatID, reply)
+		msg.ReplyToMessageID = update.Message.MessageID
+		msg.ParseMode = "Markdown"
+		if _, err := bot.Send(msg); err != nil {
+			log.Println("send error:", err)
+		}
+	}
+
+	switch {
+	case text == "/start":
+		send("Привет! 👋 Я помогу отслеживать расходы.\n\n" +
+			"*Добавить трату:* `еда 450`\n" +
+			"*Статистика за месяц:* /month\n" +
+			"*Справка:* /help")
+
+	case text == "/help":
+		send("*Как добавить трату:*\n" +
+			"`<категория> <сумма>`\n\n" +
+			"Примеры:\n" +
+			"`еда 450`\n" +
+			"`транспорт 120`\n" +
+			"`кофе 4.5`\n\n" +
+			"*Команды:*\n" +
+			"/month — статистика за текущий месяц\n" +
+			"/week — статистика за 7 дней")
+
+	case text == "/month":
+		now := time.Now()
+		from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		to := now
+
+		expenses, err := st.GetExpensesByPeriod(userID, from, to)
+		if err != nil {
+			send("Трат за этот месяц пока нет.")
+			return
+		}
+		send(formatStats(expenses, "месяц"))
+
+	case text == "/week":
+		from := time.Now().AddDate(0, 0, -7)
+		to := time.Now()
+
+		expenses, err := st.GetExpensesByPeriod(userID, from, to)
+		if err != nil {
+			send("Трат за последние 7 дней пока нет.")
+			return
+		}
+		send(formatStats(expenses, "7 дней"))
+
+	default:
+		tag, amount, err := parseExpenseInput(text)
+		if err != nil {
+			send("Неверный формат. Используй: `еда 450` или /help")
+			return
+		}
+
+		expense := models.Expense{
+			UserID:    userID,
+			Tag:       tag,
+			Amount:    int(amount),
+			CreatedAt: time.Now(),
+		}
+
+		if err := st.AddExpense(expense); err != nil {
+			log.Println("storage error:", err)
+			send(fmt.Sprintf("Ошибка сохранения: %v", err))
+			return
+		}
+
+		send(fmt.Sprintf("✅ Сохранил: *%s* — %.2f ₽", tag, float64(amount)/100))
+	}
+}
+
+func formatStats(expenses []models.Expense, period string) string {
+	tagTotals := make(map[string]int)
+	var total int
+	for _, e := range expenses {
+		tagTotals[e.Tag] += e.Amount
+		total += e.Amount
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("*Расходы за %s:*\n\n", period))
+	for tag, amount := range tagTotals {
+		sb.WriteString(fmt.Sprintf("• %s — %.2f ₽\n", tag, float64(amount)/100))
+	}
+	sb.WriteString(fmt.Sprintf("\n*Итого: %.2f ₽*", float64(total)/100))
+	return sb.String()
+}
+
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
-		log.Fatal("failed to load .env file")
+		log.Println("no .env file found, reading env vars directly")
 	}
 
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -47,63 +147,30 @@ func main() {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
 	}
 
-	st := storage.NewJSONStorage("data/expenses.json")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/expenses.db"
+	}
+
+	st, err := storage.NewSQLiteStorage(dbPath)
+	if err != nil {
+		log.Fatal("failed to init storage:", err)
+	}
+	defer st.Close()
 
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	bot.Debug = true
+	bot.Debug = os.Getenv("BOT_DEBUG") == "true"
 
 	log.Printf("authorized as @%s", bot.Self.UserName)
 
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 
-	updates := bot.GetUpdatesChan(updateConfig)
-
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-
-		text := update.Message.Text
-
-		tag, amount, err := parseExpenseInput(text)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный формат. Используй: еда 450")
-			msg.ReplyToMessageID = update.Message.MessageID
-			if _, sendErr := bot.Send(msg); sendErr != nil {
-				log.Println("send error:", sendErr)
-			}
-			continue
-		}
-
-		expense := models.Expense{
-			UserID:    update.Message.From.ID,
-			Tag:       tag,
-			Amount:    int(amount),
-			CreatedAt: time.Now(),
-		}
-
-		if err := st.AddExpense(expense); err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Ошибка сохранения: %v", err))
-			log.Println("storage error:", err)
-			msg.ReplyToMessageID = update.Message.MessageID
-			if _, sendErr := bot.Send(msg); sendErr != nil {
-				log.Println("send error:", sendErr)
-			}
-			continue
-		}
-
-		replyText := fmt.Sprintf("Сохранил: %s — %d ₽", tag, amount/100)
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, replyText)
-		msg.ReplyToMessageID = update.Message.MessageID
-
-		if _, err := bot.Send(msg); err != nil {
-			log.Println("send error:", err)
-		}
+	for update := range bot.GetUpdatesChan(updateConfig) {
+		handleUpdate(bot, update, st)
 	}
 }
