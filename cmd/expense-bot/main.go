@@ -74,8 +74,11 @@ func main() {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
 	}
 
-	st := storage.NewJSONStorage("data/expenses.json")
-
+	st, err := storage.NewSQLiteStorage("data/expenses.db")
+	if err != nil {
+		log.Fatal("failed to init storage:", err)
+	}
+	
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatal(err)
