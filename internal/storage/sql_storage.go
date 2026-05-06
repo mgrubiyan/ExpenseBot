@@ -68,7 +68,7 @@ func (s *SQLiteStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([
 		var e models.Expense
 		var createdAt string
 
-		if err := rows.Scan(&e.ID, &e.Tag, &e.Amount, &createdAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Tag, &e.Amount, &createdAt); err != nil {
 			return nil, fmt.Errorf("row scan: %w", err)
 		}
 		e.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
