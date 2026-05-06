@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 
 	"ExpenseBot/internal/bot"
 	"ExpenseBot/internal/storage"
@@ -18,7 +19,19 @@ func main() {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
 	}
 
-	st, err := storage.NewSQLiteStorage("data/expenses.db")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/expenses.db"
+	}
+
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		log.Fatal("failed to create db directory:", err)
+	}
+
+	log.Println("using sqlite db:", dbPath)
+
+	st, err := storage.NewSQLiteStorage(dbPath)
 	if err != nil {
 		log.Fatal("failed to init storage:", err)
 	}
