@@ -21,18 +21,16 @@ func parseExpenseInput(text string) (string, int64, error) {
 	if len(parts) != 2 {
 		return "", 0, fmt.Errorf("format must be: <tag> <amount>")
 	}
-
 	tag := parts[0]
-
-	amountRub, err := strconv.Atoi(parts[1])
+	amountFloat, err := strconv.ParseFloat(parts[1], 64)
 	if err != nil {
 		return "", 0, fmt.Errorf("amount must be a number")
 	}
-	if amountRub <= 0 {
+	if amountFloat <= 0 {
 		return "", 0, fmt.Errorf("amount must be greater than zero")
 	}
-
-	return tag, int64(amountRub * 100), nil
+	amountKopecks := int64(amountFloat * 100)
+	return tag, amountKopecks, nil
 }
 
 func formatStats(expenses []models.Expense, period string) string {
@@ -57,9 +55,9 @@ func formatStats(expenses []models.Expense, period string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Расходы за %s:\n\n", period))
 	for _, tag := range tags {
-		sb.WriteString(fmt.Sprintf("• %s — %d ₽ (%d)\n", tag, totals[tag]/100, counts[tag]))
+		sb.WriteString(fmt.Sprintf(fmt.Sprintf("• %s — %.2f ₽ (%d)\n", tag, float64(totals[tag])/100, counts[tag])))
 	}
-	sb.WriteString(fmt.Sprintf("\nИтого: %d ₽", total/100))
+	sb.WriteString(fmt.Sprintf(fmt.Sprintf("\nИтого: %.2f ₽", float64(total)/100)))
 
 	return sb.String()
 }
@@ -78,7 +76,7 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to init storage:", err)
 	}
-	
+
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatal(err)
@@ -173,7 +171,7 @@ func main() {
 				continue
 			}
 
-			send(fmt.Sprintf("Сохранил: %s — %d ₽", tag, amount/100))
+			send(fmt.Sprintf("Сохранил: %s — %.2f ₽", tag, float64(amount)/100))
 		}
 	}
 }
