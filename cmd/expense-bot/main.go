@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,14 +28,40 @@ func parseExpenseInput(text string) (string, int64, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("amount must be a number")
 	}
-
 	if amountRub <= 0 {
 		return "", 0, fmt.Errorf("amount must be greater than zero")
 	}
 
-	amountKopecks := int64(amountRub * 100)
+	return tag, int64(amountRub * 100), nil
+}
 
-	return tag, amountKopecks, nil
+func formatStats(expenses []models.Expense, period string) string {
+	totals := make(map[string]int)
+	counts := make(map[string]int)
+	var total int
+
+	for _, e := range expenses {
+		totals[e.Tag] += e.Amount
+		total += e.Amount
+		counts[e.Tag]++
+	}
+
+	tags := make([]string, 0, len(totals))
+	for tag := range totals {
+		tags = append(tags, tag)
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		return totals[tags[i]] > totals[tags[j]]
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Расходы за %s:\n\n", period))
+	for _, tag := range tags {
+		sb.WriteString(fmt.Sprintf("• %s — %d ₽ (%d)\n", tag, totals[tag]/100, counts[tag]))
+	}
+	sb.WriteString(fmt.Sprintf("\nИтого: %d ₽", total/100))
+
+	return sb.String()
 }
 
 func main() {
@@ -54,56 +81,75 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bot.Debug = true
-
 	log.Printf("authorized as @%s", bot.Self.UserName)
 
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 
-	updates := bot.GetUpdatesChan(updateConfig)
-
-	for update := range updates {
+	for update := range bot.GetUpdatesChan(updateConfig) {
 		if update.Message == nil {
 			continue
 		}
 
+		chatID := update.Message.Chat.ID
+		userID := update.Message.From.ID
 		text := update.Message.Text
 
-		tag, amount, err := parseExpenseInput(text)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Неверный формат. Используй: еда 450")
+		send := func(reply string) {
+			msg := tgbotapi.NewMessage(chatID, reply)
 			msg.ReplyToMessageID = update.Message.MessageID
-			if _, sendErr := bot.Send(msg); sendErr != nil {
-				log.Println("send error:", sendErr)
+			if _, err := bot.Send(msg); err != nil {
+				log.Println("send error:", err)
 			}
-			continue
 		}
 
-		expense := models.Expense{
-			UserID:    update.Message.From.ID,
-			Tag:       tag,
-			Amount:    int(amount),
-			CreatedAt: time.Now(),
-		}
+		switch text {
+		case "/month":
+			now := time.Now()
+			from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
-		if err := st.AddExpense(expense); err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Ошибка сохранения: %v", err))
-			log.Println("storage error:", err)
-			msg.ReplyToMessageID = update.Message.MessageID
-			if _, sendErr := bot.Send(msg); sendErr != nil {
-				log.Println("send error:", sendErr)
+			expenses, err := st.GetExpensesByPeriod(userID, from, now)
+			if err != nil || len(expenses) == 0 {
+				send("Трат за этот месяц пока нет.")
+				continue
 			}
-			continue
-		}
+			send(formatStats(expenses, "текущий месяц"))
 
-		replyText := fmt.Sprintf("Сохранил: %s — %d ₽", tag, amount/100)
+		case "/week":
+			from := time.Now().AddDate(0, 0, -7)
 
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, replyText)
-		msg.ReplyToMessageID = update.Message.MessageID
+			expenses, err := st.GetExpensesByPeriod(userID, from, time.Now())
+			if err != nil || len(expenses) == 0 {
+				send("Трат за последние 7 дней пока нет.")
+				continue
+			}
+			send(formatStats(expenses, "7 дней"))
 
-		if _, err := bot.Send(msg); err != nil {
-			log.Println("send error:", err)
+		default:
+			tag, amount, err := parseExpenseInput(text)
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "Неверный формат. Используй: еда 450")
+				msg.ReplyToMessageID = update.Message.MessageID
+				if _, sendErr := bot.Send(msg); sendErr != nil {
+					log.Println("send error:", sendErr)
+				}
+				continue
+			}
+
+			expense := models.Expense{
+				UserID:    userID,
+				Tag:       tag,
+				Amount:    int(amount),
+				CreatedAt: time.Now(),
+			}
+
+			if err := st.AddExpense(expense); err != nil {
+				send(fmt.Sprintf("Ошибка сохранения: %v", err))
+				log.Println("storage error:", err)
+				continue
+			}
+
+			send(fmt.Sprintf("Сохранил: %s — %d ₽", tag, amount/100))
 		}
 	}
 }

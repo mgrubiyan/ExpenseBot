@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type JSONStorage struct {
@@ -69,4 +70,22 @@ func (s *JSONStorage) AddExpense(expense models.Expense) error {
 	expenses = append(expenses, expense)
 
 	return s.saveExpenses(expenses)
+}
+
+func (s *JSONStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([]models.Expense, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	all, err := s.loadExpenses()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []models.Expense
+	for _, e := range all {
+		if e.UserID == userID && e.CreatedAt.After(from) && e.CreatedAt.Before(to) {
+			result = append(result, e)
+		}
+	}
+	return result, nil
 }
