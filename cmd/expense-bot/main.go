@@ -19,21 +19,32 @@ func main() {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
 	}
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "data/expenses.db"
-	}
+	var st storage.Storage
+	var err error
 
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0o755); err != nil {
-		log.Fatal("failed to create db directory:", err)
-	}
+	if pgURL := os.Getenv("DATABASE_URL"); pgURL != "" {
+		log.Println("using Postgres storage")
+		st, err = storage.NewPostgresStorage(pgURL)
+		if err != nil {
+			log.Fatal("failed to init postgres storage:", err)
+		}
+	} else {
+		dbPath := os.Getenv("DB_PATH")
+		if dbPath == "" {
+			dbPath = "data/expenses.db"
+		}
 
-	log.Println("using sqlite db:", dbPath)
+		dbDir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dbDir, 0o755); err != nil {
+			log.Fatal("failed to create db directory:", err)
+		}
 
-	st, err := storage.NewSQLiteStorage(dbPath)
-	if err != nil {
-		log.Fatal("failed to init storage:", err)
+		log.Println("using sqlite db:", dbPath)
+
+		st, err = storage.NewSQLiteStorage(dbPath)
+		if err != nil {
+			log.Fatal("failed to init sqlite storage:", err)
+		}
 	}
 
 	b, err := bot.New(token, st)
