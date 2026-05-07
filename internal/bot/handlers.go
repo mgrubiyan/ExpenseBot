@@ -50,7 +50,8 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"/week — расходы за 7 дней\n" +
 			"/month — расходы за текущий месяц\n" +
 			"/l5 — последние 5 трат\n" +
-			"/help — справка")
+			"/help — справка\n" +
+			"/del — удалить последнюю трату")
 
 	case "/help":
 		send("Как добавить трату:\n" +
@@ -64,7 +65,8 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"/week — расходы за 7 дней\n" +
 			"/month — расходы за текущий месяц\n" +
 			"/l5 — последние 5 трат\n" +
-			"/help — эта справка")
+			"/help — эта справка\n" +
+			"/del — удалить последнюю трату")
 
 	case "/month":
 		now := time.Now()
@@ -143,6 +145,20 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 		}
 
 		send(sb.String())
+
+	case "/del":
+		expense, err := h.storage.DeleteLastExpense(userID)
+		if err != nil {
+			send("Не удалось удалить последнюю трату.")
+			log.Println("delete last expense error:", err)
+			return
+		}
+		if expense == nil {
+			send("У тебя пока нет трат для удаления.")
+			return
+		}
+
+		send(fmt.Sprintf("Удалил: %s — %.2f ₽", expense.Tag, float64(expense.Amount)/100))
 
 	default:
 		tag, amount, err := models.ParseExpenseInput(text)

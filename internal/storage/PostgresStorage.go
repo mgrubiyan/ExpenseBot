@@ -109,3 +109,28 @@ func (s *PostgresStorage) GetLastExpenses(userID int64, limit int) ([]models.Exp
 
 	return expenses, rows.Err()
 }
+
+func (s *PostgresStorage) DeleteLastExpense(userID int64) (*models.Expense, error) {
+	var e models.Expense
+
+	err := s.db.QueryRow(`
+		DELETE FROM expenses
+		WHERE id = (
+			SELECT id
+			FROM expenses
+			WHERE user_id = $1
+			ORDER BY created_at DESC
+			LIMIT 1
+		)
+		RETURNING id, user_id, tag, amount, created_at
+	`, userID).Scan(&e.ID, &e.UserID, &e.Tag, &e.Amount, &e.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delete last expense: %w", err)
+	}
+
+	return &e, nil
+}

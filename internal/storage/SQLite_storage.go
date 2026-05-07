@@ -115,3 +115,35 @@ func (s *SQLiteStorage) GetLastExpenses(userID int64, limit int) ([]models.Expen
 
 	return expenses, rows.Err()
 }
+
+func (s *SQLiteStorage) DeleteLastExpense(userID int64) (*models.Expense, error) {
+	row := s.db.QueryRow(`
+		SELECT id, user_id, tag, amount, created_at
+		FROM expenses
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, userID)
+	var e models.Expense
+	var createdAt string
+
+	err := row.Scan(&e.ID, &e.UserID, &e.Tag, &e.Amount, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select last expense: %w", err)
+	}
+
+	e.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse time: %w", err)
+	}
+
+	_, err = s.db.Exec(`DELETE FROM expenses WHERE id = ? AND user_id = ?`, e.ID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("delete last expense: %w", err)
+	}
+
+	return &e, nil
+}
