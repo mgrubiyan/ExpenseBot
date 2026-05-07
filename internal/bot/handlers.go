@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ExpenseBot/internal/models"
@@ -44,7 +45,12 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"еда 450\n" +
 			"транспорт 120\n" +
 			"кофе 4.5\n\n" +
-			"Если что — пиши /help")
+			"Команды:\n" +
+			"/today — расходы за сегодня\n" +
+			"/week — расходы за 7 дней\n" +
+			"/month — расходы за текущий месяц\n" +
+			"/l5 — последние 5 трат\n" +
+			"/help — справка")
 
 	case "/help":
 		send("Как добавить трату:\n" +
@@ -54,8 +60,10 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"транспорт 120\n" +
 			"кофе 4.5\n\n" +
 			"Команды:\n" +
-			"/month — расходы за текущий месяц\n" +
+			"/today — расходы за сегодня\n" +
 			"/week — расходы за 7 дней\n" +
+			"/month — расходы за текущий месяц\n" +
+			"/l5 — последние 5 трат\n" +
 			"/help — эта справка")
 
 	case "/month":
@@ -92,6 +100,50 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 		send(models.FormatStats(expenses, "7 дней"))
 
+	case "/today":
+		now := time.Now()
+		from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+		expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
+		if err != nil {
+			send("Не удалось получить расходы за сегодня.")
+			log.Println("get today expenses error:", err)
+			return
+		}
+		if len(expenses) == 0 {
+			send("Трат за сегодня пока нет.")
+			return
+		}
+
+		send(models.FormatStats(expenses, "сегодня"))
+
+	case "/l5":
+		expenses, err := h.storage.GetLastExpenses(userID, 5)
+		if err != nil {
+			send("Не удалось получить последние траты.")
+			log.Println("get last expenses error:", err)
+			return
+		}
+		if len(expenses) == 0 {
+			send("У тебя пока нет сохранённых трат.")
+			return
+		}
+
+		var sb strings.Builder
+		sb.WriteString("Последние 5 трат:\n\n")
+
+		for i, e := range expenses {
+			sb.WriteString(fmt.Sprintf(
+				"%d. %s — %.2f ₽ (%s)\n",
+				i+1,
+				e.Tag,
+				float64(e.Amount)/100,
+				e.CreatedAt.Format("02.01 15:04"),
+			))
+		}
+
+		send(sb.String())
+
 	default:
 		tag, amount, err := models.ParseExpenseInput(text)
 		if err != nil {
@@ -102,7 +154,7 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 		expense := models.Expense{
 			UserID:    userID,
 			Tag:       tag,
-			Amount:    int(amount),
+			Amount:    amount,
 			CreatedAt: time.Now(),
 		}
 

@@ -81,3 +81,37 @@ func (s *SQLiteStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([
 
 	return expenses, rows.Err()
 }
+func (s *SQLiteStorage) GetLastExpenses(userID int64, limit int) ([]models.Expense, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, tag, amount, created_at
+         FROM expenses
+         WHERE user_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+		userID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+
+	var expenses []models.Expense
+	for rows.Next() {
+		var e models.Expense
+		var createdAt string
+
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Tag, &e.Amount, &createdAt); err != nil {
+			return nil, fmt.Errorf("row scan: %w", err)
+		}
+
+		e.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse time: %w", err)
+		}
+
+		expenses = append(expenses, e)
+	}
+
+	return expenses, rows.Err()
+}

@@ -82,3 +82,30 @@ func (s *PostgresStorage) GetExpensesByPeriod(userID int64, from, to time.Time) 
 
 	return expenses, rows.Err()
 }
+
+func (s *PostgresStorage) GetLastExpenses(userID int64, limit int) ([]models.Expense, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, tag, amount, created_at
+		 FROM expenses
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2`,
+		userID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query last expenses: %w", err)
+	}
+	defer rows.Close()
+
+	var expenses []models.Expense
+	for rows.Next() {
+		var e models.Expense
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Tag, &e.Amount, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan last expenses: %w", err)
+		}
+		expenses = append(expenses, e)
+	}
+
+	return expenses, rows.Err()
+}

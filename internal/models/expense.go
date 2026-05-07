@@ -12,7 +12,7 @@ type Expense struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
 	Tag       string    `json:"tag"`
-	Amount    int       `json:"amount"`
+	Amount    int64     `json:"amount"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -34,9 +34,9 @@ func ParseExpenseInput(text string) (string, int64, error) {
 }
 
 func FormatStats(expenses []Expense, period string) string {
-	totals := make(map[string]int)
+	totals := make(map[string]int64)
 	counts := make(map[string]int)
-	var total int
+	var total int64
 
 	for _, e := range expenses {
 		totals[e.Tag] += e.Amount
@@ -55,9 +55,9 @@ func FormatStats(expenses []Expense, period string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Расходы за %s:\n\n", period))
 	for _, tag := range tags {
-		sb.WriteString(fmt.Sprintf(fmt.Sprintf("• %s — %.2f ₽ (%d)\n", tag, float64(totals[tag])/100, counts[tag])))
+		sb.WriteString(fmt.Sprintf("• %s — %.2f ₽ (%d)\n", tag, float64(totals[tag])/100, counts[tag]))
 	}
-	sb.WriteString(fmt.Sprintf(fmt.Sprintf("\nИтого: %.2f ₽", float64(total)/100)))
+	sb.WriteString(fmt.Sprintf("\nИтого: %.2f ₽", float64(total)/100))
 
 	return sb.String()
 }
