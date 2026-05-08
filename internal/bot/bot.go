@@ -37,10 +37,6 @@ func (b *Bot) Run() error {
 	updates := b.api.GetUpdatesChan(updateConfig)
 
 	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-
 		b.handler.HandleUpdate(b.api, update)
 	}
 

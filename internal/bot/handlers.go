@@ -3,7 +3,6 @@ package bot
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"ExpenseBot/internal/models"
@@ -20,7 +19,78 @@ func NewHandler(st storage.Storage) *Handler {
 	return &Handler{storage: st}
 }
 
+func (h *Handler) handleCallback(api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuery) {
+	callback := tgbotapi.NewCallback(cq.ID, "")
+	if _, err := api.Request(callback); err != nil {
+		log.Println("callback answer error:", err)
+	}
+
+	chatID := cq.Message.Chat.ID
+	data := cq.Data
+	userID := cq.From.ID
+
+	send := func(reply string) {
+		msg := tgbotapi.NewMessage(chatID, reply)
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send callback message error:", err)
+		}
+	}
+
+	switch data {
+	case callbackMenuAdd:
+		msg := tgbotapi.NewMessage(chatID, "Отправь трату в формате:\nкатегория сумма\n\nПримеры:\nеда 450\nкофе 4.5")
+		msg.ReplyMarkup = mainMenuKeyboard()
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send add hint error:", err)
+		}
+
+	case callbackMenuHelp:
+		msg := tgbotapi.NewMessage(chatID, "Команды:\n/today — расходы за сегодня\n/week — расходы за 7 дней\n/month — расходы за текущий месяц\n/l5 — последние 5 трат\n/del — удалить последнюю трату")
+		msg.ReplyMarkup = mainMenuKeyboard()
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send help error:", err)
+		}
+
+	case callbackMenuHistory:
+		msg := tgbotapi.NewMessage(chatID, "Выбери период истории:")
+		msg.ReplyMarkup = historyMenuKeyboard()
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send history menu error:", err)
+		}
+
+	case callbackHistoryToday:
+		h.sendTodayStats(userID, send)
+
+	case callbackHistoryWeek:
+		h.sendWeekStats(userID, send)
+
+	case callbackHistoryMonth:
+		h.sendMonthStats(userID, send)
+
+	case callbackHistoryLast5:
+		h.sendLast5(userID, send)
+
+	case callbackMenuDeleteLast:
+		h.deleteLastExpense(userID, send)
+
+	case callbackNavBackMain:
+		msg := tgbotapi.NewMessage(chatID, "Главное меню:")
+		msg.ReplyMarkup = mainMenuKeyboard()
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send main menu error:", err)
+		}
+
+	default:
+		send("Нажата кнопка: " + data)
+	}
+}
+
 func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
+	if update.CallbackQuery != nil {
+		h.handleCallback(api, update.CallbackQuery)
+		return
+	}
+
 	if update.Message == nil {
 		return
 	}
@@ -39,19 +109,16 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	switch text {
 	case "/start":
-		send("Привет! 👋\n\n" +
-			"Я помогу тебе контролировать расходы и чувствовать себя увереннее в финансах.\n\n" +
-			"Чтобы добавить трату, просто напиши:\n" +
-			"еда 450\n" +
-			"транспорт 120\n" +
-			"кофе 4.5\n\n" +
-			"Команды:\n" +
-			"/today — расходы за сегодня\n" +
-			"/week — расходы за 7 дней\n" +
-			"/month — расходы за текущий месяц\n" +
-			"/l5 — последние 5 трат\n" +
-			"/help — справка\n" +
-			"/del — удалить последнюю трату")
+		msg := tgbotapi.NewMessage(
+			chatID, "Привет! 👋\n\n"+
+				"Я помогу тебе контролировать расходы.\n\n"+
+				"Выбери действие ниже или просто отправь трату в формате:\n"+
+				"еда 450")
+		msg.ReplyMarkup = mainMenuKeyboard()
+
+		if _, err := api.Send(msg); err != nil {
+			log.Println("send start message error:", err)
+		}
 
 	case "/help":
 		send("Как добавить трату:\n" +
@@ -69,96 +136,19 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"/del — удалить последнюю трату")
 
 	case "/month":
-		now := time.Now()
-		from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-
-		expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
-		if err != nil {
-			send("Не удалось получить расходы за месяц.")
-			log.Println("get month expenses error:", err)
-			return
-		}
-		if len(expenses) == 0 {
-			send("Трат за этот месяц пока нет.")
-			return
-		}
-
-		send(models.FormatStats(expenses, "текущий месяц"))
+		h.sendMonthStats(userID, send)
 
 	case "/week":
-		now := time.Now()
-		from := now.AddDate(0, 0, -7)
-
-		expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
-		if err != nil {
-			send("Не удалось получить расходы за последние 7 дней.")
-			log.Println("get week expenses error:", err)
-			return
-		}
-		if len(expenses) == 0 {
-			send("Трат за последние 7 дней пока нет.")
-			return
-		}
-
-		send(models.FormatStats(expenses, "7 дней"))
+		h.sendWeekStats(userID, send)
 
 	case "/today":
-		now := time.Now()
-		from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-		expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
-		if err != nil {
-			send("Не удалось получить расходы за сегодня.")
-			log.Println("get today expenses error:", err)
-			return
-		}
-		if len(expenses) == 0 {
-			send("Трат за сегодня пока нет.")
-			return
-		}
-
-		send(models.FormatStats(expenses, "сегодня"))
+		h.sendTodayStats(userID, send)
 
 	case "/l5":
-		expenses, err := h.storage.GetLastExpenses(userID, 5)
-		if err != nil {
-			send("Не удалось получить последние траты.")
-			log.Println("get last expenses error:", err)
-			return
-		}
-		if len(expenses) == 0 {
-			send("У тебя пока нет сохранённых трат.")
-			return
-		}
-
-		var sb strings.Builder
-		sb.WriteString("Последние 5 трат:\n\n")
-
-		for i, e := range expenses {
-			sb.WriteString(fmt.Sprintf(
-				"%d. %s — %.2f ₽ (%s)\n",
-				i+1,
-				e.Tag,
-				float64(e.Amount)/100,
-				e.CreatedAt.Format("02.01 15:04"),
-			))
-		}
-
-		send(sb.String())
+		h.sendLast5(userID, send)
 
 	case "/del":
-		expense, err := h.storage.DeleteLastExpense(userID)
-		if err != nil {
-			send("Не удалось удалить последнюю трату.")
-			log.Println("delete last expense error:", err)
-			return
-		}
-		if expense == nil {
-			send("У тебя пока нет трат для удаления.")
-			return
-		}
-
-		send(fmt.Sprintf("Удалил: %s — %.2f ₽", expense.Tag, float64(expense.Amount)/100))
+		h.deleteLastExpense(userID, send)
 
 	default:
 		tag, amount, err := models.ParseExpenseInput(text)
