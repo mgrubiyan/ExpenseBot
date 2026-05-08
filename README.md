@@ -87,11 +87,11 @@ go run ./cmd/expense-bot
 
 ### Переменные окружения
 
-| Переменная | Описание | Обязательная |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | ❌ (используется SQLite) |
-| `DB_PATH` | Путь к SQLite файлу | ❌ (default: `data/expenses.db`) |
-
+| Переменная         | Описание                     | Обязательная                  |
+| ------------------ | ---------------------------- | ----------------------------- |
+| TELEGRAM_BOT_TOKEN | Токен бота от @BotFather     | ✅                             |
+| DATABASE_URL       | PostgreSQL connection string | ❌ (используется SQLite)       |
+| DB_PATH            | Путь к SQLite файлу          | ❌ (default: data/expenses.db) |
 ## Технологии
 
 - **[Go](https://golang.org/)** — основной язык
@@ -105,5 +105,3 @@ go run ./cmd/expense-bot
 **Matvey Grubiyan** — [GitHub](https://github.com/mgrubiyan)
 
 ***
-
-*Проект создан в образовательных целях как часть портфолио Go-разработчика.*
