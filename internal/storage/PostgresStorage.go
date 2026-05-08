@@ -16,6 +16,11 @@ type PostgresStorage struct {
 
 func NewPostgresStorage(connStr string) (*PostgresStorage, error) {
 	db, err := sql.Open("postgres", connStr)
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
