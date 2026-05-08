@@ -2,17 +2,18 @@ package bot
 
 import (
 	"ExpenseBot/internal/models"
+	"context"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 )
 
-func (h *Handler) sendTodayStats(userID int64, send func(string)) {
+func (h *Handler) sendTodayStats(ctx context.Context, userID int64, send func(string)) {
 	now := time.Now()
 	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
+	expenses, err := h.storage.GetExpensesByPeriod(ctx, userID, from, now)
 	if err != nil {
 		send("Не удалось получить расходы за сегодня.")
 		log.Println("get today expenses error:", err)
@@ -25,11 +26,11 @@ func (h *Handler) sendTodayStats(userID int64, send func(string)) {
 	send(models.FormatStats(expenses, "сегодня"))
 }
 
-func (h *Handler) sendWeekStats(userID int64, send func(string)) {
+func (h *Handler) sendWeekStats(ctx context.Context, userID int64, send func(string)) {
 	now := time.Now()
 	from := now.AddDate(0, 0, -7)
 
-	expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
+	expenses, err := h.storage.GetExpensesByPeriod(ctx, userID, from, now)
 	if err != nil {
 		send("Не удалось получить расходы за последние 7 дней.")
 		log.Println("get week expenses error:", err)
@@ -43,11 +44,11 @@ func (h *Handler) sendWeekStats(userID int64, send func(string)) {
 	send(models.FormatStats(expenses, "7 дней"))
 }
 
-func (h *Handler) sendMonthStats(userID int64, send func(string)) {
+func (h *Handler) sendMonthStats(ctx context.Context, userID int64, send func(string)) {
 	now := time.Now()
 	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
-	expenses, err := h.storage.GetExpensesByPeriod(userID, from, now)
+	expenses, err := h.storage.GetExpensesByPeriod(ctx, userID, from, now)
 	if err != nil {
 		send("Не удалось получить расходы за месяц.")
 		log.Println("get month expenses error:", err)
@@ -60,8 +61,8 @@ func (h *Handler) sendMonthStats(userID int64, send func(string)) {
 	send(models.FormatStats(expenses, "текущий месяц"))
 }
 
-func (h *Handler) sendLast5(userID int64, send func(string)) {
-	expenses, err := h.storage.GetLastExpenses(userID, 5)
+func (h *Handler) sendLast5(ctx context.Context, userID int64, send func(string)) {
+	expenses, err := h.storage.GetLastExpenses(ctx, userID, 5)
 	if err != nil {
 		send("Не удалось получить последние траты.")
 		log.Println("get last expenses error:", err)
@@ -88,8 +89,8 @@ func (h *Handler) sendLast5(userID int64, send func(string)) {
 	send(sb.String())
 }
 
-func (h *Handler) deleteLastExpense(userID int64, send func(string)) {
-	expense, err := h.storage.DeleteLastExpense(userID)
+func (h *Handler) deleteLastExpense(ctx context.Context, userID int64, send func(string)) {
+	expense, err := h.storage.DeleteLastExpense(ctx, userID)
 	if err != nil {
 		send("Не удалось удалить последнюю трату.")
 		log.Println("delete last expense error:", err)

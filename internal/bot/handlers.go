@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -19,7 +20,7 @@ func NewHandler(st storage.Storage) *Handler {
 	return &Handler{storage: st}
 }
 
-func (h *Handler) handleCallback(api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuery) {
+func (h *Handler) handleCallback(ctx context.Context, api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuery) {
 	callback := tgbotapi.NewCallback(cq.ID, "")
 	if _, err := api.Request(callback); err != nil {
 		log.Println("callback answer error:", err)
@@ -59,19 +60,19 @@ func (h *Handler) handleCallback(api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuer
 		}
 
 	case callbackHistoryToday:
-		h.sendTodayStats(userID, send)
+		h.sendTodayStats(ctx, userID, send)
 
 	case callbackHistoryWeek:
-		h.sendWeekStats(userID, send)
+		h.sendWeekStats(ctx, userID, send)
 
 	case callbackHistoryMonth:
-		h.sendMonthStats(userID, send)
+		h.sendMonthStats(ctx, userID, send)
 
 	case callbackHistoryLast5:
-		h.sendLast5(userID, send)
+		h.sendLast5(ctx, userID, send)
 
 	case callbackMenuDeleteLast:
-		h.deleteLastExpense(userID, send)
+		h.deleteLastExpense(ctx, userID, send)
 
 	case callbackNavBackMain:
 		msg := tgbotapi.NewMessage(chatID, "Главное меню:")
@@ -86,8 +87,11 @@ func (h *Handler) handleCallback(api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuer
 }
 
 func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	if update.CallbackQuery != nil {
-		h.handleCallback(api, update.CallbackQuery)
+		h.handleCallback(ctx, api, update.CallbackQuery)
 		return
 	}
 
@@ -136,19 +140,19 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			"/del — удалить последнюю трату")
 
 	case "/month":
-		h.sendMonthStats(userID, send)
+		h.sendMonthStats(ctx, userID, send)
 
 	case "/week":
-		h.sendWeekStats(userID, send)
+		h.sendWeekStats(ctx, userID, send)
 
 	case "/today":
-		h.sendTodayStats(userID, send)
+		h.sendTodayStats(ctx, userID, send)
 
 	case "/l5":
-		h.sendLast5(userID, send)
+		h.sendLast5(ctx, userID, send)
 
 	case "/del":
-		h.deleteLastExpense(userID, send)
+		h.deleteLastExpense(ctx, userID, send)
 
 	default:
 		tag, amount, err := models.ParseExpenseInput(text)
@@ -164,7 +168,7 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 			CreatedAt: time.Now(),
 		}
 
-		if err := h.storage.AddExpense(expense); err != nil {
+		if err := h.storage.AddExpense(ctx, expense); err != nil {
 			send(fmt.Sprintf("Ошибка сохранения: %v", err))
 			log.Println("storage error:", err)
 			return

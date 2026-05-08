@@ -2,6 +2,7 @@ package storage
 
 import (
 	"ExpenseBot/internal/models"
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -26,7 +27,10 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 }
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS expenses (
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS expenses (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL,
             tag        TEXT    NOT NULL,
@@ -37,8 +41,8 @@ func migrate(db *sql.DB) error {
 	return err
 }
 
-func (s *SQLiteStorage) AddExpense(expense models.Expense) error {
-	_, err := s.db.Exec(
+func (s *SQLiteStorage) AddExpense(ctx context.Context, expense models.Expense) error {
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO expenses (user_id, tag, amount, created_at) VALUES (?, ?, ?, ?)`,
 		expense.UserID,
 		expense.Tag,
@@ -48,12 +52,12 @@ func (s *SQLiteStorage) AddExpense(expense models.Expense) error {
 	return err
 }
 
-func (s *SQLiteStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([]models.Expense, error) {
-	rows, err := s.db.Query(
+func (s *SQLiteStorage) GetExpensesByPeriod(ctx context.Context, userID int64, from, to time.Time) ([]models.Expense, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, user_id, tag, amount, created_at
-         FROM expenses
-         WHERE user_id = ? AND created_at >= ? AND created_at <= ?
-         ORDER BY created_at DESC`,
+        FROM expenses
+        WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+        ORDER BY created_at DESC`,
 		userID,
 		from.UTC().Format(time.RFC3339),
 		to.UTC().Format(time.RFC3339),
@@ -81,8 +85,8 @@ func (s *SQLiteStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([
 
 	return expenses, rows.Err()
 }
-func (s *SQLiteStorage) GetLastExpenses(userID int64, limit int) ([]models.Expense, error) {
-	rows, err := s.db.Query(
+func (s *SQLiteStorage) GetLastExpenses(ctx context.Context, userID int64, limit int) ([]models.Expense, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, user_id, tag, amount, created_at
          FROM expenses
          WHERE user_id = ?
@@ -116,8 +120,8 @@ func (s *SQLiteStorage) GetLastExpenses(userID int64, limit int) ([]models.Expen
 	return expenses, rows.Err()
 }
 
-func (s *SQLiteStorage) DeleteLastExpense(userID int64) (*models.Expense, error) {
-	row := s.db.QueryRow(`
+func (s *SQLiteStorage) DeleteLastExpense(ctx context.Context, userID int64) (*models.Expense, error) {
+	row := s.db.QueryRowContext(ctx, `
 		SELECT id, user_id, tag, amount, created_at
 		FROM expenses
 		WHERE user_id = ?
@@ -140,7 +144,7 @@ func (s *SQLiteStorage) DeleteLastExpense(userID int64) (*models.Expense, error)
 		return nil, fmt.Errorf("parse time: %w", err)
 	}
 
-	_, err = s.db.Exec(`DELETE FROM expenses WHERE id = ? AND user_id = ?`, e.ID, userID)
+	_, err = s.db.ExecContext(ctx, `DELETE FROM expenses WHERE id = ? AND user_id = ?`, e.ID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("delete last expense: %w", err)
 	}

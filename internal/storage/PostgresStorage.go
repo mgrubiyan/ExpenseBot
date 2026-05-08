@@ -2,6 +2,7 @@ package storage
 
 import (
 	"ExpenseBot/internal/models"
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -31,7 +32,10 @@ func NewPostgresStorage(connStr string) (*PostgresStorage, error) {
 }
 
 func migratePostgres(db *sql.DB) error {
-	_, err := db.Exec(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS expenses (
     id         BIGSERIAL PRIMARY KEY,
     user_id    BIGINT      NOT NULL,
@@ -43,8 +47,8 @@ CREATE TABLE IF NOT EXISTS expenses (
 	return err
 }
 
-func (s *PostgresStorage) AddExpense(expense models.Expense) error {
-	_, err := s.db.Exec(
+func (s *PostgresStorage) AddExpense(ctx context.Context, expense models.Expense) error {
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO expenses (user_id, tag, amount, created_at) 
          VALUES ($1, $2, $3, $4)`,
 		expense.UserID,
@@ -55,8 +59,8 @@ func (s *PostgresStorage) AddExpense(expense models.Expense) error {
 	return err
 }
 
-func (s *PostgresStorage) GetExpensesByPeriod(userID int64, from, to time.Time) ([]models.Expense, error) {
-	rows, err := s.db.Query(
+func (s *PostgresStorage) GetExpensesByPeriod(ctx context.Context, userID int64, from, to time.Time) ([]models.Expense, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, user_id, tag, amount, created_at
          FROM expenses
          WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
@@ -83,8 +87,8 @@ func (s *PostgresStorage) GetExpensesByPeriod(userID int64, from, to time.Time) 
 	return expenses, rows.Err()
 }
 
-func (s *PostgresStorage) GetLastExpenses(userID int64, limit int) ([]models.Expense, error) {
-	rows, err := s.db.Query(
+func (s *PostgresStorage) GetLastExpenses(ctx context.Context, userID int64, limit int) ([]models.Expense, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, user_id, tag, amount, created_at
 		 FROM expenses
 		 WHERE user_id = $1
@@ -110,11 +114,11 @@ func (s *PostgresStorage) GetLastExpenses(userID int64, limit int) ([]models.Exp
 	return expenses, rows.Err()
 }
 
-func (s *PostgresStorage) DeleteLastExpense(userID int64) (*models.Expense, error) {
+func (s *PostgresStorage) DeleteLastExpense(ctx context.Context, userID int64) (*models.Expense, error) {
 	var e models.Expense
 
-	err := s.db.QueryRow(`
-		DELETE FROM expenses
+	err := s.db.QueryRowContext(ctx,
+		`DELETE FROM expenses
 		WHERE id = (
 			SELECT id
 			FROM expenses
