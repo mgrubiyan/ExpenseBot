@@ -19,18 +19,18 @@ type Expense struct {
 func ParseExpenseInput(text string) (string, int64, error) {
 	parts := strings.Fields(text)
 	if len(parts) != 2 {
-		return "", 0, fmt.Errorf("format must be: <tag> <amount>")
+		return "", 0, fmt.Errorf("ожидается: <категория> <сумма>")
 	}
+
 	tag := parts[0]
-	amountFloat, err := strconv.ParseFloat(parts[1], 64)
+	raw := parts[1]
+
+	amount, err := parseAmountToCents(raw)
 	if err != nil {
-		return "", 0, fmt.Errorf("amount must be a number")
+		return "", 0, err
 	}
-	if amountFloat <= 0 {
-		return "", 0, fmt.Errorf("amount must be greater than zero")
-	}
-	amountKopecks := int64(amountFloat * 100)
-	return tag, amountKopecks, nil
+
+	return tag, amount, nil
 }
 
 func FormatStats(expenses []Expense, period string) string {
@@ -60,4 +60,69 @@ func FormatStats(expenses []Expense, period string) string {
 	sb.WriteString(fmt.Sprintf("\nИтого: %.2f ₽", float64(total)/100))
 
 	return sb.String()
+}
+
+func parseAmountToCents(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return 0, fmt.Errorf("пустая сумма")
+	}
+
+	negative := false
+	if strings.HasPrefix(s, "-") {
+		negative = true
+		s = s[1:]
+	}
+
+	if s == "" {
+		return 0, fmt.Errorf("пустая сумма")
+	}
+
+	parts := strings.SplitN(s, ".", 2)
+
+	intPartStr := parts[0]
+	fracPartStr := ""
+	if len(parts) == 2 {
+		fracPartStr = parts[1]
+	}
+
+	if intPartStr == "" {
+		intPartStr = "0"
+	}
+
+	for _, r := range intPartStr {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("неверный формат суммы")
+		}
+	}
+
+	intPart, err := strconv.ParseInt(intPartStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("неверный формат суммы")
+	}
+
+	var fracPart int64
+	switch len(fracPartStr) {
+	case 0:
+		fracPart = 0
+	case 1:
+		if fracPartStr[0] < '0' || fracPartStr[0] > '9' {
+			return 0, fmt.Errorf("неверный формат суммы")
+		}
+		fracPart = int64(fracPartStr[0]-'0') * 10
+	default:
+		r0, r1 := fracPartStr[0], fracPartStr[1]
+		if r0 < '0' || r0 > '9' || r1 < '0' || r1 > '9' {
+			return 0, fmt.Errorf("неверный формат суммы")
+		}
+		fracPart = int64(r0-'0')*10 + int64(r1-'0')
+	}
+
+	cents := intPart*100 + fracPart
+	if negative {
+		cents = -cents
+	}
+
+	return cents, nil
 }
