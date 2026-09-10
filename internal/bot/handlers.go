@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ExpenseBot/internal/models"
@@ -46,7 +47,7 @@ func (h *Handler) handleCallback(ctx context.Context, api *tgbotapi.BotAPI, cq *
 		}
 
 	case callbackMenuHelp:
-		msg := tgbotapi.NewMessage(chatID, "Команды:\n/today — расходы за сегодня\n/week — расходы за 7 дней\n/month — расходы за текущий месяц\n/l5 — последние 5 трат\n/del — удалить последнюю трату")
+		msg := tgbotapi.NewMessage(chatID, helpText())
 		msg.ReplyMarkup = mainMenuKeyboard()
 		if _, err := api.Send(msg); err != nil {
 			log.Println("send help error:", err)
@@ -86,6 +87,30 @@ func (h *Handler) handleCallback(ctx context.Context, api *tgbotapi.BotAPI, cq *
 	}
 }
 
+func helpText() string {
+	return "Как добавить личную трату:\n" +
+		"<категория> <сумма>\n\n" +
+		"Примеры:\n" +
+		"еда 450\n" +
+		"транспорт 120\n" +
+		"кофе 4.5\n\n" +
+		"Команды:\n" +
+		"/today — расходы за сегодня\n" +
+		"/week — расходы за 7 дней\n" +
+		"/month — расходы за текущий месяц\n" +
+		"/l5 — последние 5 трат\n" +
+		"/help — эта справка\n" +
+		"/del — удалить последнюю трату\n\n" +
+		"Групповые траты (с соседями/друзьями):\n" +
+		"/newgroup <название> — создать группу\n" +
+		"/join <код> — вступить в группу по коду\n" +
+		"/mygroups — мои группы\n" +
+		"/gadd <код> <сумма> <описание> — общая трата, делится поровну\n" +
+		"/gadd <код> <сумма> <описание> @user:сумма ... — с кастомными долями\n" +
+		"/gbalance <код> — баланс группы и кто кому должен\n" +
+		"/gsettle <код> @user <сумма> — отметить, что рассчитались"
+}
+
 func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -101,6 +126,7 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	chatID := update.Message.Chat.ID
 	userID := update.Message.From.ID
+	username := update.Message.From.UserName
 	text := update.Message.Text
 
 	send := func(reply string) {
@@ -111,13 +137,25 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 		}
 	}
 
-	switch text {
+	// Split off the command word so commands that take arguments
+	// (e.g. "/newgroup Соседи") route correctly; a bare "еда 450" still
+	// falls straight through to the expense parser below.
+	fields := strings.Fields(text)
+	command := ""
+	args := ""
+	if len(fields) > 0 {
+		command = fields[0]
+		args = strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+	}
+
+	switch command {
 	case "/start":
 		msg := tgbotapi.NewMessage(
 			chatID, "Привет! 👋\n\n"+
 				"Я помогу тебе контролировать расходы.\n\n"+
 				"Выбери действие ниже или просто отправь трату в формате:\n"+
-				"еда 450")
+				"еда 450\n\n"+
+				"Есть общие траты с соседями или друзьями? Создай группу: /newgroup <название>")
 		msg.ReplyMarkup = mainMenuKeyboard()
 
 		if _, err := api.Send(msg); err != nil {
@@ -125,19 +163,7 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 		}
 
 	case "/help":
-		send("Как добавить трату:\n" +
-			"<категория> <сумма>\n\n" +
-			"Примеры:\n" +
-			"еда 450\n" +
-			"транспорт 120\n" +
-			"кофе 4.5\n\n" +
-			"Команды:\n" +
-			"/today — расходы за сегодня\n" +
-			"/week — расходы за 7 дней\n" +
-			"/month — расходы за текущий месяц\n" +
-			"/l5 — последние 5 трат\n" +
-			"/help — эта справка\n" +
-			"/del — удалить последнюю трату")
+		send(helpText())
 
 	case "/month":
 		h.sendMonthStats(ctx, userID, send)
@@ -153,6 +179,24 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	case "/del":
 		h.deleteLastExpense(ctx, userID, send)
+
+	case "/newgroup":
+		h.handleNewGroup(ctx, userID, username, args, send)
+
+	case "/join":
+		h.handleJoinGroup(ctx, userID, username, args, send)
+
+	case "/mygroups":
+		h.handleMyGroups(ctx, userID, username, send)
+
+	case "/gadd":
+		h.handleGroupAdd(ctx, userID, username, args, send)
+
+	case "/gbalance":
+		h.handleGroupBalance(ctx, userID, username, args, send)
+
+	case "/gsettle":
+		h.handleGroupSettle(ctx, userID, username, args, send)
 
 	default:
 		tag, amount, err := models.ParseExpenseInput(text)

@@ -126,3 +126,9 @@ func parseAmountToCents(s string) (int64, error) {
 
 	return cents, nil
 }
+
+// ParseAmount parses a human-entered amount (e.g. "450" or "4.5") into cents.
+// Used by group expense/settlement commands.
+func ParseAmount(s string) (int64, error) {
+	return parseAmountToCents(s)
+}
