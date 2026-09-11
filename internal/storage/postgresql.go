@@ -415,3 +415,18 @@ func (s *PostgresStorage) CreateSettlement(ctx context.Context, st models.Settle
 	}
 	return nil
 }
+
+func (s *PostgresStorage) GetGroupByID(ctx context.Context, groupID int64) (*models.Group, error) {
+	var g models.Group
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, invite_code, created_at FROM groups WHERE id = $1
+	`, groupID).Scan(&g.ID, &g.Name, &g.InviteCode, &g.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get group by id: %w", err)
+	}
+	return &g, nil
+}

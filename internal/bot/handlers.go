@@ -14,17 +14,25 @@ import (
 )
 
 type Handler struct {
-	storage storage.Storage
+	storage  storage.Storage
+	sessions *sessionStore
 }
 
 func NewHandler(st storage.Storage) *Handler {
-	return &Handler{storage: st}
+	return &Handler{storage: st, sessions: newSessionStore()}
 }
 
 func (h *Handler) handleCallback(ctx context.Context, api *tgbotapi.BotAPI, cq *tgbotapi.CallbackQuery) {
 	callback := tgbotapi.NewCallback(cq.ID, "")
 	if _, err := api.Request(callback); err != nil {
 		log.Println("callback answer error:", err)
+	}
+
+	// Group-flow buttons (group list, group card, add/balance/settle wizards)
+	// live in their own callback data namespace and their own handler.
+	if strings.HasPrefix(cq.Data, "g:") {
+		h.handleGroupCallback(ctx, api, cq)
+		return
 	}
 
 	chatID := cq.Message.Chat.ID
@@ -75,6 +83,12 @@ func (h *Handler) handleCallback(ctx context.Context, api *tgbotapi.BotAPI, cq *
 	case callbackMenuDeleteLast:
 		h.deleteLastExpense(ctx, userID, send)
 
+	case callbackMenuGroups:
+		// Reuse the group-list view by handing off with rewritten
+		// callback data, so there's one place that renders it.
+		cq.Data = "g:list"
+		h.handleGroupCallback(ctx, api, cq)
+
 	case callbackNavBackMain:
 		msg := tgbotapi.NewMessage(chatID, "Главное меню:")
 		msg.ReplyMarkup = mainMenuKeyboard()
@@ -101,7 +115,8 @@ func helpText() string {
 		"/l5 — последние 5 трат\n" +
 		"/help — эта справка\n" +
 		"/del — удалить последнюю трату\n\n" +
-		"Групповые траты (с соседями/друзьями):\n" +
+		"Групповые траты (с соседями/друзьями) — жми «👥 Группы» в меню, коды вводить не нужно.\n" +
+		"Для тех, кто любит команды, есть и текстовый вариант:\n" +
 		"/newgroup <название> — создать группу\n" +
 		"/join <код> — вступить в группу по коду\n" +
 		"/mygroups — мои группы\n" +
@@ -129,6 +144,15 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 	username := update.Message.From.UserName
 	text := update.Message.Text
 
+	// A plain-text reply (not a command) while a button-driven flow is in
+	// progress (e.g. we just asked "введи сумму") continues that flow
+	// instead of being parsed as a personal expense.
+	if !strings.HasPrefix(text, "/") {
+		if h.handleGroupSessionText(ctx, userID, username, text, api, chatID) {
+			return
+		}
+	}
+
 	send := func(reply string) {
 		msg := tgbotapi.NewMessage(chatID, reply)
 		msg.ReplyToMessageID = update.Message.MessageID
@@ -148,14 +172,25 @@ func (h *Handler) HandleUpdate(api *tgbotapi.BotAPI, update tgbotapi.Update) {
 		args = strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
 	}
 
+	if command != "" {
+		// Any explicit command abandons whatever button flow was pending -
+		// otherwise a stray "введи сумму" reply could later be reinterpreted.
+		h.sessions.reset(userID)
+	}
+
 	switch command {
 	case "/start":
+		if strings.HasPrefix(args, "join_") {
+			code := strings.TrimPrefix(args, "join_")
+			h.handleJoinGroup(ctx, userID, username, code, send)
+		}
+
 		msg := tgbotapi.NewMessage(
 			chatID, "Привет! 👋\n\n"+
 				"Я помогу тебе контролировать расходы.\n\n"+
 				"Выбери действие ниже или просто отправь трату в формате:\n"+
 				"еда 450\n\n"+
-				"Есть общие траты с соседями или друзьями? Создай группу: /newgroup <название>")
+				"Есть общие траты с соседями или друзьями? Жми «👥 Группы» в меню.")
 		msg.ReplyMarkup = mainMenuKeyboard()
 
 		if _, err := api.Send(msg); err != nil {

@@ -14,6 +14,8 @@ const (
 	callbackHistoryLast5 = "history:last5"
 
 	callbackNavBackMain = "nav:back_main"
+
+	callbackMenuGroups = "menu:groups"
 )
 
 func mainMenuKeyboard() tgbotapi.InlineKeyboardMarkup {
@@ -25,6 +27,9 @@ func mainMenuKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 История", callbackMenuHistory),
 			tgbotapi.NewInlineKeyboardButtonData("ℹ️ Help", callbackMenuHelp),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👥 Группы", callbackMenuGroups),
 		),
 	)
 }

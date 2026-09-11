@@ -282,6 +282,17 @@ func (h *Handler) handleGroupBalance(ctx context.Context, tgUserID int64, userna
 		return
 	}
 
+	text := formatGroupBalance(group, members, balances)
+	if len(simplifyDebts(balances)) > 0 {
+		text += "\nКогда рассчитаетесь: /gsettle " + group.InviteCode + " @user сумма"
+	}
+	send(text)
+}
+
+// formatGroupBalance renders per-member balances plus a simplified
+// "who pays whom" settlement plan. Shared by the text-command and
+// button-driven balance views.
+func formatGroupBalance(group *models.Group, members []models.User, balances map[int64]int64) string {
 	byID := make(map[int64]models.User, len(members))
 	for _, m := range members {
 		byID[m.ID] = m
@@ -307,10 +318,9 @@ func (h *Handler) handleGroupBalance(ctx context.Context, tgUserID int64, userna
 		for _, d := range debts {
 			sb.WriteString(fmt.Sprintf("%s → %s: %.2f ₽\n", displayName(byID[d.From]), displayName(byID[d.To]), float64(d.Amount)/100))
 		}
-		sb.WriteString("\nКогда рассчитаетесь: /gsettle " + group.InviteCode + " @user сумма")
 	}
 
-	send(sb.String())
+	return sb.String()
 }
 
 func (h *Handler) handleGroupSettle(ctx context.Context, tgUserID int64, username, args string, send func(string)) {

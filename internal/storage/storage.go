@@ -39,6 +39,10 @@ type Storage interface {
 	// GetUserGroups returns every group userID (internal user ID) belongs to.
 	GetUserGroups(ctx context.Context, userID int64) ([]models.Group, error)
 
+	// GetGroupByID looks up a group by its internal ID.
+	// Returns (nil, nil) if no such group exists.
+	GetGroupByID(ctx context.Context, groupID int64) (*models.Group, error)
+
 	// GetGroupMembers returns every user in the group.
 	GetGroupMembers(ctx context.Context, groupID int64) ([]models.User, error)
 

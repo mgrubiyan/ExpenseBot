@@ -465,3 +465,24 @@ func (s *SQLiteStorage) CreateSettlement(ctx context.Context, st models.Settleme
 	}
 	return nil
 }
+
+func (s *SQLiteStorage) GetGroupByID(ctx context.Context, groupID int64) (*models.Group, error) {
+	var g models.Group
+	var createdAt string
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, invite_code, created_at FROM groups WHERE id = ?
+	`, groupID).Scan(&g.ID, &g.Name, &g.InviteCode, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get group by id: %w", err)
+	}
+
+	g.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse time: %w", err)
+	}
+	return &g, nil
+}
